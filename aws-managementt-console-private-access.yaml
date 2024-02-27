@@ -1,0 +1,226 @@
+Description: |
+  AWS Management Console Private Access.
+Parameters:
+  AppVPC: 
+    Type: AWS::EC2::VPC::Id
+    Description: CIDR range for VPC
+
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet::Id
+    Description: CIDR range for Public Subnet A
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet::Id
+    Description: CIDR range for Public Subnet B
+
+  PrivateSubnetC:
+    Type: AWS::EC2::Subnet::Id
+    Description: CIDR range for Public Subnet C
+
+  PrivateRouteTable:
+    Type: String
+    Description: ID of the private route table
+Resources:
+
+#########################
+# SECURITY GROUPS
+#########################
+
+  VPCEndpointSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Allow TLS for VPC Endpoint
+      VpcId: !Ref AppVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+#########################
+# VPC ENDPOINTS
+#########################
+
+  VPCEndpointGatewayS3:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcEndpointType: Gateway
+      VpcId: !Ref AppVPC
+      RouteTableIds:
+        - !Ref PrivateRouteTable
+        
+  VPCEndpointInterfaceSSM:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: false
+      SubnetIds:
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ssm'
+      VpcId: !Ref AppVPC
+        
+  VPCEndpointInterfaceEc2messages:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: false
+      SubnetIds:
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+        - !Ref PrivateSubnetC
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ec2messages'
+      VpcId: !Ref AppVPC
+        
+  VPCEndpointInterfaceSsmmessages:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: false
+      SubnetIds:
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+        - !Ref PrivateSubnetC
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ssmmessages'
+      VpcId: !Ref AppVPC
+        
+  VPCEndpointInterfaceSignin:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: false
+      SubnetIds:
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+        - !Ref PrivateSubnetC
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.signin'
+      VpcId: !Ref AppVPC
+        
+  VPCEndpointInterfaceConsole:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: false
+      SubnetIds:
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+        - !Ref PrivateSubnetC
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.console'
+      VpcId: !Ref AppVPC
+
+#########################
+# ROUTE53 RESOURCES
+#########################
+
+  ConsoleHostedZone: 
+    Type: "AWS::Route53::HostedZone"
+    Properties: 
+      HostedZoneConfig: 
+        Comment: 'Console VPC Endpoint Hosted Zone'
+      Name: 'console.aws.amazon.com'
+      VPCs: 
+        - 
+          VPCId: !Ref AppVPC
+          VPCRegion: !Ref "AWS::Region"
+          
+  ConsoleRecordGlobal:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref 'ConsoleHostedZone'
+      Name: 'console.aws.amazon.com'
+      AliasTarget:
+        DNSName: !Select ['1', !Split [':', !Select ['0', !GetAtt VPCEndpointInterfaceConsole.DnsEntries]]]
+        HostedZoneId: !Select ['0', !Split [':', !Select ['0', !GetAtt VPCEndpointInterfaceConsole.DnsEntries]]]
+      Type: A
+
+  GlobalConsoleRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref 'ConsoleHostedZone'
+      Name: 'global.console.aws.amazon.com'
+      AliasTarget:
+        DNSName: !Select ['1', !Split [':', !Select ['0', !GetAtt VPCEndpointInterfaceConsole.DnsEntries]]]
+        HostedZoneId: !Select ['0', !Split [':', !Select ['0', !GetAtt VPCEndpointInterfaceConsole.DnsEntries]]]
+      Type: A
+          
+  ConsoleS3ProxyRecordGlobal:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref 'ConsoleHostedZone'
+      Name: 's3.console.aws.amazon.com'
+      AliasTarget:
+        DNSName: !Select ['1', !Split [':', !Select ['0', !GetAtt VPCEndpointInterfaceConsole.DnsEntries]]]
+        HostedZoneId: !Select ['0', !Split [':', !Select ['0', !GetAtt VPCEndpointInterfaceConsole.DnsEntries]]]
+      Type: A
+          
+  ConsoleSupportProxyRecordGlobal:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref 'ConsoleHostedZone'
+      Name: "support.console.aws.amazon.com"
+      AliasTarget:
+        DNSName: !Select ['1', !Split [':', !Select ['0', !GetAtt VPCEndpointInterfaceConsole.DnsEntries]]]
+        HostedZoneId: !Select ['0', !Split [':', !Select ['0', !GetAtt VPCEndpointInterfaceConsole.DnsEntries]]]
+      Type: A
+          
+  ExplorerProxyRecordGlobal:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref 'ConsoleHostedZone'
+      Name: "resource-explorer.console.aws.amazon.com"
+      AliasTarget:
+        DNSName: !Select ['1', !Split [':', !Select ['0', !GetAtt VPCEndpointInterfaceConsole.DnsEntries]]]
+        HostedZoneId: !Select ['0', !Split [':', !Select ['0', !GetAtt VPCEndpointInterfaceConsole.DnsEntries]]]
+      Type: A
+          
+  ConsoleRecordRegional:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref 'ConsoleHostedZone'
+      Name: !Sub "${AWS::Region}.console.aws.amazon.com"
+      AliasTarget:
+        DNSName: !Select ['1', !Split [':', !Select ['0', !GetAtt VPCEndpointInterfaceConsole.DnsEntries]]]
+        HostedZoneId: !Select ['0', !Split [':', !Select ['0', !GetAtt VPCEndpointInterfaceConsole.DnsEntries]]]
+      Type: A
+
+  SigninHostedZone: 
+    Type: "AWS::Route53::HostedZone"
+    Properties: 
+      HostedZoneConfig: 
+        Comment: 'Signin VPC Endpoint Hosted Zone'
+      Name: 'signin.aws.amazon.com'
+      VPCs: 
+        - 
+          VPCId: !Ref AppVPC
+          VPCRegion: !Ref "AWS::Region"
+          
+  SigninRecordGlobal:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref 'SigninHostedZone'
+      Name: 'signin.aws.amazon.com'
+      AliasTarget:
+        DNSName: !Select ['1', !Split [':', !Select ['0', !GetAtt VPCEndpointInterfaceSignin.DnsEntries]]]
+        HostedZoneId: !Select ['0', !Split [':', !Select ['0', !GetAtt VPCEndpointInterfaceSignin.DnsEntries]]]
+      Type: A
+          
+  SigninRecordRegional:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref 'SigninHostedZone'
+      Name: !Sub "${AWS::Region}.signin.aws.amazon.com"
+      AliasTarget:
+        DNSName: !Select ['1', !Split [':', !Select ['0', !GetAtt VPCEndpointInterfaceSignin.DnsEntries]]]
+        HostedZoneId: !Select ['0', !Split [':', !Select ['0', !GetAtt VPCEndpointInterfaceSignin.DnsEntries]]]
+      Type: A
